@@ -330,7 +330,7 @@ def main():
         jobs.append(job)
 
     write_outputs(jobs, out_jsonl, out_csv)
-    print(f"Wrote {len(jobs)} jobs → {out_jsonl} and {out_csv}")
+    print(f"Wrote {len(jobs)} jobs -> {out_jsonl} and {out_csv}")
 
 
 if __name__ == "__main__":
