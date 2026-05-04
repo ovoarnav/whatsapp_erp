@@ -30,13 +30,20 @@ class MockVisionAnalyzer(VisionAnalyzer):
 class SmolVLMVisionAnalyzer(VisionAnalyzer):
     def __init__(self, model_name:str=DEFAULT_VISION_MODEL):
         self.model_name=model_name
+        self._pipe = None
+        self._init_error = None
+        try:
+            from transformers import pipeline
+            self._pipe = pipeline("image-to-text", model=self.model_name)
+        except Exception as e:
+            self._init_error = str(e)
     def _failed(self,msg:str):
         return {"visual_observations":[],"media_summary":msg,"recommended_followup_questions":[],"model_used":self.model_name,"analysis_mode":"failed"}
     def analyze_image(self,image_path,context_text=None):
+        if self._pipe is None:
+            return self._failed(f"SmolVLM unavailable: {self._init_error or 'pipeline init failed'}")
         try:
-            from transformers import pipeline
-            pipe=pipeline("image-to-text",model=self.model_name)
-            out=pipe(image_path,max_new_tokens=60)
+            out=self._pipe(image_path,max_new_tokens=60)
             txt=str(out[0].get('generated_text','')) if out else ''
             return {"visual_observations":[{"observation":f"Possible visual finding: {txt[:180]}","confidence":0.45,"evidence_type":"image","media_id":None,"frame_timestamp":None,"possible_trade_categories":["unknown"],"possible_risks":["scope_uncertainty"]}],"media_summary":"SmolVLM observation generated; cannot confirm from image alone.","recommended_followup_questions":["Can you share additional angles or measurements?"],"model_used":self.model_name,"analysis_mode":"smolvlm"}
         except Exception as e:

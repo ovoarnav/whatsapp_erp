@@ -14,6 +14,8 @@ VALID_QR = {"not_ready","partially_ready","ready"}
 ENABLE_VISION_ANALYSIS = os.getenv("ENABLE_VISION_ANALYSIS","1") != "0"
 VISION_ANALYZER_MODE = os.getenv("VISION_ANALYZER_MODE","auto")
 VISION_MODEL = os.getenv("DEFAULT_VISION_MODEL", DEFAULT_VISION_MODEL)
+MAX_MEDIA_PER_JOB = int(os.getenv("MAX_MEDIA_PER_JOB", "2"))
+MAX_CHAT_CONTEXT_CHARS = int(os.getenv("MAX_CHAT_CONTEXT_CHARS", "1400"))
 
 
 def read_messages(path: Path) -> List[Dict[str, Any]]:
@@ -194,9 +196,22 @@ def normalize_job(job: Dict[str,Any], fallback: Dict[str,Any]) -> Dict[str,Any]:
 
 
 def maybe_refine_with_ollama(job: Dict[str,Any], model: str, chat_text: str) -> Dict[str,Any]:
-    prompt=f"Return only valid JSON. Improve operator_summary, customer_reply_draft, scope_summary, quote_readiness.reason and recommended_actions clarity. Keep existing schema keys. JSON: {json.dumps(job)}\\nChat:\\n{chat_text[:6000]}"
+    compact = {
+        "job_id": job.get("job_id"),
+        "chat_id": job.get("chat_id"),
+        "trade_category": job.get("trade_category"),
+        "job_status": job.get("job_status"),
+        "urgency": job.get("urgency"),
+        "scope_summary": job.get("scope_summary"),
+        "quote_readiness": job.get("quote_readiness"),
+        "risk_flags": job.get("risk_flags", [])[:4],
+        "recommended_actions": job.get("recommended_actions", [])[:3],
+        "media_summary": job.get("media_summary"),
+        "visual_observations": job.get("visual_observations", [])[:4],
+    }
+    prompt=f"Return only valid JSON for same schema keys. Keep concise fields and practical actions. Input JSON: {json.dumps(compact)}\\nChat:\\n{chat_text[:MAX_CHAT_CONTEXT_CHARS]}"
     try:
-        req=urllib.request.Request("http://localhost:11434/api/chat",data=json.dumps({"model":model,"stream":False,"messages":[{"role":"user","content":prompt}],"options":{"temperature":0}}).encode("utf-8"),headers={"Content-Type":"application/json"})
+        req=urllib.request.Request("http://localhost:11434/api/chat",data=json.dumps({"model":model,"stream":False,"messages":[{"role":"user","content":prompt}],"options":{"temperature":0,"num_predict":220,"top_k":20,"top_p":0.9,"repeat_penalty":1.05}}).encode("utf-8"),headers={"Content-Type":"application/json"})
         with urllib.request.urlopen(req, timeout=90) as resp:
             obj=json.loads(resp.read().decode("utf-8"))
         parsed=json.loads(obj.get("message",{}).get("content","{}"))
@@ -268,27 +283,11 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
     job['media_summary']=' '.join(summaries)[:600] if summaries else None
     job['media_followup_questions']=list(dict.fromkeys(questions))[:6]
     job['evidence_mode']=mode
-    job['vision_analysis_mode']=modes[0] if modes else 'skipped'
+    uniq_modes=list(dict.fromkeys(modes))
+    job['vision_analysis_mode']=uniq_modes[0] if len(uniq_modes)==1 else ('mixed' if uniq_modes else 'skipped')
+    job['vision_model_used']=model_used[0] if model_used else None
     return job
 
-
-def ollama_second_pass(job: Dict[str,Any], msgs: List[Dict[str,Any]], model: str) -> Dict[str,Any]:
-    if not job.get('visual_observations'):
-        return job
-    chat_text='\n'.join((m.get('text') or '') for m in msgs[-20:])
-    prompt=(
-        "Return valid JSON with same schema; update business fields using conversation + visual evidence. "
-        "Keep this model as final reasoning. Visual observations are hints only. JSON:" + json.dumps(job) +
-        "\nConversation:" + chat_text[:2000]
-    )
-    try:
-        req=urllib.request.Request("http://localhost:11434/api/chat",data=json.dumps({"model":model,"stream":False,"messages":[{"role":"user","content":prompt}],"options":{"temperature":0}}).encode("utf-8"),headers={"Content-Type":"application/json"})
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            obj=json.loads(resp.read().decode('utf-8'))
-        parsed=json.loads(obj.get('message',{}).get('content','{}'))
-        return normalize_job(parsed, job)
-    except Exception:
-        return normalize_job(job, job)
 
 def write_outputs(jobs, out_jsonl: Path, out_csv: Path):
     with out_jsonl.open("w",encoding="utf-8") as f:
@@ -312,6 +311,14 @@ def main():
     jobs=[]
     groups=group_by_chat(read_messages(Path(args.inp)))
     media_rows=read_media(Path(args.media_jsonl)) if args.media_jsonl else []
+    media_by_chat=defaultdict(list)
+    for m in media_rows:
+        media_by_chat[m.get("chat_id")].append(m)
+    for cid,msgs in groups.items():
+        chat_text="\n".join((m.get("text") or "") for m in msgs)
+        base=build_job(cid,msgs)
+        mm_job=analyze_media_for_job(base, media_by_chat.get(cid, []), msgs)
+        final_job=maybe_refine_with_ollama(mm_job,args.model,chat_text)
     for cid,msgs in groups.items():
         base=build_job(cid,msgs)
         text_job=maybe_refine_with_ollama(base,args.model,"\n".join((m.get("text") or "") for m in msgs))
