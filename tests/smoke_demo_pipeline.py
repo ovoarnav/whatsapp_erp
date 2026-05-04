@@ -17,4 +17,5 @@ for j in jobs:
     assert isinstance(j.get('recommended_actions'), list) and len(j['recommended_actions']) >= 1
     assert isinstance(j.get('operator_summary'), str) and len(j['operator_summary'].strip()) > 10
     assert j.get('privacy_mode') == 'local_ollama'
+    assert j.get('evidence_mode') in {'text_only', 'text_image', 'text_video', 'multimodal'}
 print('Smoke test passed:', len(jobs), 'jobs')
