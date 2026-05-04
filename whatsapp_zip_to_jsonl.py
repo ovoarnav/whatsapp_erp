@@ -151,9 +151,7 @@ def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "Americ
     from media_processing import media_type_for
     count = 0
     media_rows=[]
-    chat_ids=[]
     with zipfile.ZipFile(zip_path, "r") as zf, out_path.open("w", encoding="utf-8") as out_f:
-        chat_ids=[Path(i.filename).stem for i in zf.infolist() if i.filename.lower().endswith(".txt")]
         for info in zf.infolist():
             low=info.filename.lower()
             if not low.endswith(".txt"):
@@ -163,12 +161,7 @@ def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "Americ
                     media_dir.mkdir(parents=True,exist_ok=True)
                     target=media_dir / Path(info.filename).name
                     with zf.open(info,"r") as src, target.open("wb") as dst: dst.write(src.read())
-                    inferred_chat = None
-                    for cid in chat_ids:
-                        if cid.lower() in low:
-                            inferred_chat = cid
-                            break
-                    media_rows.append({"media_id":f"media_{len(media_rows)+1}","chat_id":inferred_chat or (chat_ids[0] if len(chat_ids)==1 else "unassigned"),"job_id":None,"media_type":mtype,"local_path":str(target),"filename":Path(info.filename).name,"timestamp":None,"sender":None,"caption_or_message":None,"extracted_frames":[],"audio_transcript":None,"analysis_status":"pending","privacy_mode":"local"})
+                    media_rows.append({"media_id":f"media_{len(media_rows)+1}","chat_id":Path(info.filename).stem,"job_id":None,"media_type":mtype,"local_path":str(target),"filename":Path(info.filename).name,"timestamp":None,"sender":None,"caption_or_message":None,"extracted_frames":[],"audio_transcript":None,"analysis_status":"pending","privacy_mode":"local"})
                 continue
             chat_id = Path(info.filename).stem
             with zf.open(info, "r") as f:

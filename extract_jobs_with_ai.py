@@ -242,7 +242,7 @@ def build_context_text(job: Dict[str,Any], msgs: List[Dict[str,Any]]) -> str:
 
 
 def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], msgs: List[Dict[str,Any]]) -> Dict[str,Any]:
-    job_media=media_rows[:MAX_MEDIA_PER_JOB]
+    job_media=[m for m in media_rows if str(m.get('chat_id','')).startswith(job.get('chat_id','')) or m.get('chat_id')==job.get('chat_id')]
     if not job_media or not ENABLE_VISION_ANALYSIS:
         job['media_assets']=job_media
         job['visual_observations']=[]
@@ -252,7 +252,7 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
         job['vision_analysis_mode']='skipped'
         return job
     analyzer=get_vision_analyzer(VISION_ANALYZER_MODE,VISION_MODEL)
-    all_obs=[]; summaries=[]; questions=[]; modes=[]; model_used=[]
+    all_obs=[]; summaries=[]; questions=[]; modes=[]
     has_img=False; has_vid=False
     ctx=build_context_text(job,msgs)
     for m in job_media:
@@ -262,16 +262,12 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
             res=analyzer.analyze_image(m.get('local_path',''),ctx)
         elif mtype=='video':
             has_vid=True
-            frames=[]
-            if VISION_ANALYZER_MODE != "mock":
-                frames=extract_video_frames(m.get('local_path',''), str(Path(m.get('local_path','')).parent / 'frames'))
+            frames=extract_video_frames(m.get('local_path',''), str(Path(m.get('local_path','')).parent / 'frames'))
             m['extracted_frames']=frames
             res=analyzer.analyze_video(m.get('local_path',''), [f['frame_path'] for f in frames], ctx)
         else:
             m['analysis_status']='skipped'; continue
         m['analysis_status']='analyzed' if res.get('analysis_mode') in ('mock','smolvlm') else 'failed'
-        if res.get("model_used"):
-            model_used.append(res["model_used"])
         for o in res.get('visual_observations',[]):
             o['media_id']=m.get('media_id')
             all_obs.append(o)
@@ -323,6 +319,11 @@ def main():
         base=build_job(cid,msgs)
         mm_job=analyze_media_for_job(base, media_by_chat.get(cid, []), msgs)
         final_job=maybe_refine_with_ollama(mm_job,args.model,chat_text)
+    for cid,msgs in groups.items():
+        base=build_job(cid,msgs)
+        text_job=maybe_refine_with_ollama(base,args.model,"\n".join((m.get("text") or "") for m in msgs))
+        mm_job=analyze_media_for_job(text_job, media_rows, msgs)
+        final_job=ollama_second_pass(mm_job, msgs, args.model)
         jobs.append(normalize_job(final_job, mm_job))
     write_outputs(jobs,Path(args.out_jsonl),Path(args.out_csv))
     print(f"Wrote {len(jobs)} jobs -> {args.out_jsonl} and {args.out_csv}")
