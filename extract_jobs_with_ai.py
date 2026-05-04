@@ -227,7 +227,7 @@ def build_context_text(job: Dict[str,Any], msgs: List[Dict[str,Any]]) -> str:
 
 
 def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], msgs: List[Dict[str,Any]]) -> Dict[str,Any]:
-    job_media=[m for m in media_rows if m.get('chat_id')==job.get('chat_id')]
+    job_media=[m for m in media_rows if str(m.get('chat_id','')).startswith(job.get('chat_id','')) or m.get('chat_id')==job.get('chat_id')]
     if not job_media or not ENABLE_VISION_ANALYSIS:
         job['media_assets']=job_media
         job['visual_observations']=[]
@@ -237,7 +237,7 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
         job['vision_analysis_mode']='skipped'
         return job
     analyzer=get_vision_analyzer(VISION_ANALYZER_MODE,VISION_MODEL)
-    all_obs=[]; summaries=[]; questions=[]; modes=[]; model_used=[]
+    all_obs=[]; summaries=[]; questions=[]; modes=[]
     has_img=False; has_vid=False
     ctx=build_context_text(job,msgs)
     for m in job_media:
@@ -253,8 +253,6 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
         else:
             m['analysis_status']='skipped'; continue
         m['analysis_status']='analyzed' if res.get('analysis_mode') in ('mock','smolvlm') else 'failed'
-        if res.get("model_used"):
-            model_used.append(res["model_used"])
         for o in res.get('visual_observations',[]):
             o['media_id']=m.get('media_id')
             all_obs.append(o)
@@ -270,9 +268,7 @@ def analyze_media_for_job(job: Dict[str,Any], media_rows: List[Dict[str,Any]], m
     job['media_summary']=' '.join(summaries)[:600] if summaries else None
     job['media_followup_questions']=list(dict.fromkeys(questions))[:6]
     job['evidence_mode']=mode
-    uniq_modes=list(dict.fromkeys(modes))
-    job['vision_analysis_mode']=uniq_modes[0] if len(uniq_modes)==1 else ('mixed' if uniq_modes else 'skipped')
-    job['vision_model_used']=model_used[0] if model_used else None
+    job['vision_analysis_mode']=modes[0] if modes else 'skipped'
     return job
 
 

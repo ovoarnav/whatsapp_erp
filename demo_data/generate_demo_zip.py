@@ -30,7 +30,4 @@ out = Path(__file__).parent / "demo_whatsapp_export.zip"
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
     for filename, chat_text in chats.items():
         zf.writestr(filename, chat_text)
-    # tiny placeholder media files for multimodal smoke path
-    zf.writestr("chat_tile_bathroom_tile_water_damage.jpg", b"not-a-real-image")
-    zf.writestr("chat_roof_active_leak_video.mp4", b"not-a-real-video")
 print(out)
