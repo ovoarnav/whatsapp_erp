@@ -147,11 +147,28 @@ def parse_chat_txt(content: str, tz_name: Optional[str]) -> Iterator[Tuple[datet
     return iter_messages(iter(content.splitlines(True)), tz_name)
 
 
-def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "America/Toronto") -> int:
+def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "America/Toronto", media_out: Optional[Path]=None) -> int:
+    from media_processing import media_type_for
     count = 0
+    media_rows=[]
+    chat_ids=[]
     with zipfile.ZipFile(zip_path, "r") as zf, out_path.open("w", encoding="utf-8") as out_f:
+        chat_ids=[Path(i.filename).stem for i in zf.infolist() if i.filename.lower().endswith(".txt")]
         for info in zf.infolist():
-            if not info.filename.lower().endswith(".txt"):
+            low=info.filename.lower()
+            if not low.endswith(".txt"):
+                mtype=media_type_for(info.filename)
+                if mtype!="unknown":
+                    media_dir=(media_out.parent / "media_assets") if media_out else (out_path.parent / "media_assets")
+                    media_dir.mkdir(parents=True,exist_ok=True)
+                    target=media_dir / Path(info.filename).name
+                    with zf.open(info,"r") as src, target.open("wb") as dst: dst.write(src.read())
+                    inferred_chat = None
+                    for cid in chat_ids:
+                        if cid.lower() in low:
+                            inferred_chat = cid
+                            break
+                    media_rows.append({"media_id":f"media_{len(media_rows)+1}","chat_id":inferred_chat or (chat_ids[0] if len(chat_ids)==1 else "unassigned"),"job_id":None,"media_type":mtype,"local_path":str(target),"filename":Path(info.filename).name,"timestamp":None,"sender":None,"caption_or_message":None,"extracted_frames":[],"audio_transcript":None,"analysis_status":"pending","privacy_mode":"local"})
                 continue
             chat_id = Path(info.filename).stem
             with zf.open(info, "r") as f:
@@ -173,6 +190,10 @@ def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "Americ
                 )
                 out_f.write(json.dumps(asdict(msg), ensure_ascii=False) + "\n")
                 count += 1
+    if media_out:
+        with media_out.open("w",encoding="utf-8") as mf:
+            for row in media_rows:
+                mf.write(json.dumps(row, ensure_ascii=False)+"\n")
     return count
 
 
@@ -181,6 +202,7 @@ def main():
     parser.add_argument("--zip", required=True, help="Path to WhatsApp export .zip")
     parser.add_argument("--out", required=True, help="Output JSONL path")
     parser.add_argument("--tz", default="America/Toronto", help="IANA timezone (default: America/Toronto)")
+    parser.add_argument("--media-out", default=None, help="Optional output JSONL path for discovered media assets")
     args = parser.parse_args()
 
     zip_path = Path(args.zip)
@@ -191,7 +213,7 @@ def main():
         sys.exit(1)
 
     try:
-        n = process_zip(zip_path, out_path, args.tz)
+        n = process_zip(zip_path, out_path, args.tz, Path(args.media_out) if args.media_out else None)
     except zipfile.BadZipFile:
         print("Error: Not a valid ZIP file (or file is corrupted).", file=sys.stderr)
         sys.exit(2)

@@ -1,144 +1,105 @@
-🧰 BuildSafe AI – WhatsApp Job Extractor
+# BuildSafe AI — Privacy-First Operating Layer for Trades
 
-A local-first AI-powered tool that converts WhatsApp chat exports into structured job data for trades workers.
+BuildSafe AI converts messy WhatsApp conversations **and media evidence** into structured job intelligence for trades teams.
 
-🚀 Overview
+## Core product loop (kept and extended)
+1. WhatsApp ZIP import
+2. `whatsapp_zip_to_jsonl.py` parses normalized messages **and discovers media assets**
+3. `extract_jobs_with_ai.py` runs the existing Ollama-first text/business extraction
+4. Optional SmolVLM2 media analysis runs second (images/videos only)
+5. Final Ollama fusion pass enriches the job with visual evidence
+6. `app.py` shows multi-job operating dashboard and exports CSV/JSONL
 
-This project ingests a WhatsApp .zip export (from the official chat export feature), extracts messages, and uses a local LLM (via Ollama
-) to automatically identify key details such as:
+## Privacy-first local architecture
+- **Ollama** remains the main local reasoning engine for business decisions.
+- **SmolVLM2** is used only for visual observations from image/video.
+- No cloud LLM is required.
+- Customer messages/media can remain local.
 
-Customer name
+## Multimodal design principle
+SmolVLM2 does **not** make final business decisions.
+It outputs observational visual evidence only:
+- visual observations
+- media summary
+- follow-up visual questions
 
-Date & time of job
+Then Ollama fuses:
+- prior text job context
+- conversation snippet
+- visual observations
+into final job intelligence.
 
-Job type
+## Vision model and fallback
+Default model:
+- `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`
 
-Location
+Analyzers:
+- `SmolVLMVisionAnalyzer` (real model, optional)
+- `MockVisionAnalyzer` (reliable fallback for demos)
 
-Materials required
+Config flags (env vars):
+- `ENABLE_VISION_ANALYSIS=1|0`
+- `VISION_ANALYZER_MODE=auto|smolvlm|mock`
+- `DEFAULT_VISION_MODEL=HuggingFaceTB/SmolVLM2-500M-Video-Instruct`
 
-Confidence score
+Behavior:
+- `auto`: try SmolVLM path; if unavailable, fallback to mock
+- `smolvlm`: try real model; fail gracefully
+- `mock`: deterministic demo-safe visual observations
 
-The extracted data is displayed in a web dashboard and can be exported to .csv or .jsonl formats.
+## Media ingestion and support
+Detected media types in ZIP:
+- Images: `.jpg .jpeg .png .webp`
+- Videos: `.mp4 .mov .m4v`
+- Audio placeholder: `.ogg .opus .m4a .mp3 .wav`
+- Documents: `.pdf`
 
-🏗️ Architecture
+Normalized media objects are emitted with:
+- media metadata
+- local extracted path
+- frame extraction fields for video
+- analysis status
 
-Phase 1 – WhatsApp ZIP → JSONL
+## New enriched fields in final job object
+- `media_assets`
+- `visual_observations`
+- `media_summary`
+- `media_followup_questions`
+- `evidence_mode` (`text_only | text_image | text_video | multimodal`)
+- `vision_analysis_mode` (`mock | smolvlm | skipped | failed`)
 
-whatsapp_zip_to_jsonl.py parses the exported WhatsApp ZIP and outputs normalized messages:
+## Dashboard multimodal evidence
+Each job card now includes:
+- evidence mode
+- media file list
+- media summary
+- visual observations
+- media follow-up questions
+- source evidence snippets and source message IDs
 
-{"chat_id": "chat_123", "timestamp": "2024-12-31T14:37:00", "sender": "John Doe", "text": "Toilet replacement"}
-
-
-Phase 2 – JSONL → AI Extraction
-
-extract_jobs_with_ai.py uses an Ollama model (e.g. phi3.5) to identify and structure job details.
-
-Combines rule-based parsing + AI extraction for reliability and speed.
-
-Phase 3 – Web UI
-
-app.py provides a simple Flask interface for:
-
-Uploading WhatsApp ZIPs
-
-Automatically running Phases 1 & 2
-
-Viewing and downloading structured outputs
-
-🧩 Requirements
-
-Python 3.10+
-
-Pip packages:
-
-pip install flask
-
-
-Ollama (Local LLM runtime)
-
-Download at ollama.ai/download
-
-Run in background:
-
+## Run locally
+```bash
+pip install -r requirements.txt
 ollama serve
-
-
-Pull the model (recommended lightweight one):
-
 ollama pull phi3.5
-
-🖥️ Local Development
-
-Clone or open project
-
-cd "C:\Users\User\PycharmProjects\whatsapp erp"
-
-
-Run Flask UI
-
 python app.py
+```
+Open: `http://127.0.0.1:5000`
 
+## 60-second multimodal demo
+1. Start app and click **Run 60-Second Demo**.
+2. Upload a WhatsApp ZIP containing text + media files (images/video) to see multimodal evidence mode.
+3. Show: text reasoning (Ollama), visual observations (SmolVLM/mock), and final fused job actions.
 
-Visit http://127.0.0.1:5000
+## Smoke test
+```bash
+python tests/smoke_demo_pipeline.py
+```
 
-Upload your WhatsApp .zip file
-The app will:
-
-Parse ZIP → messages JSONL
-
-Extract job info using phi3.5
-
-Show results in a table
-
-Offer .csv and .jsonl download links
-
-📂 File Structure
-whatsapp-erp/
-│
-├── app.py                      # Flask web interface
-├── whatsapp_zip_to_jsonl.py    # Phase 1: ZIP → JSONL extractor
-├── extract_jobs_with_ai.py     # Phase 2: AI extractor (Ollama-based)
-│
-├── templates/                  # (optional future HTML files)
-├── static/                     # (optional CSS/JS files)
-│
-└── README.md
-
-⚙️ Configuration
-
-Edit these lines at the top of app.py if needed:
-
-PHASE1_SCRIPT = "whatsapp_zip_to_jsonl.py"
-PHASE2_SCRIPT = "extract_jobs_with_ai.py"
-DEFAULT_TZ = "America/Toronto"
-OLLAMA_MODEL = "phi3.5"
-
-
-Or use absolute paths if your scripts live elsewhere.
-
-✅ Example Output (CSV)
-Customer	Date	Location	Job Type	Materials	Confidence	Notes
-John Doe	2024-12-31T09:00:00	12 King St, Toronto	Toilet replacement	wax ring, bolts	0.88	Confirmed Friday
-🧠 Debugging Tips
-Issue	Fix
-File not found errors	Make sure both scripts are in the same directory as app.py.
-UnicodeEncodeError	Replace fancy Unicode arrows (→) in prints with ASCII (->).
-Ollama connection error	Start Ollama via ollama serve.
-Model not found	Run ollama pull phi3.5.
-Empty CSV	Test with more detailed WhatsApp data — short chats may not trigger the AI parser.
-🔐 Next Steps (Production Upgrade Roadmap)
-
-Planned Phase 4 Goals:
-
-Add user authentication (JWT or OAuth)
-
-Support multi-tenant data isolation (Postgres + RLS)
-
-Move inference to serverless (AWS Lambda + ECS Ollama container)
-
-Enforce secure S3 storage + encryption at rest
-
-Validate against data protection standards (PII minimization, retention, encryption)
-
-Implement per-message extraction + deduplication
+## Roadmap
+- Live WhatsApp/Twilio ingestion
+- Quote generation workflow
+- Scheduling readiness workflows
+- Material planning depth
+- Job costing loop
+- FSM/ERP/CRM integrations
