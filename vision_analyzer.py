@@ -61,6 +61,7 @@ def get_vision_analyzer(mode:str='auto', model_name:str=DEFAULT_VISION_MODEL):
         return SmolVLMVisionAnalyzer(model_name)
     # auto
     analyzer=SmolVLMVisionAnalyzer(model_name)
-    if analyzer._pipe is None:
+    probe=analyzer.analyze_image(__file__)  # expected fail quickly due non-image
+    if probe.get('analysis_mode')=='failed':
         return MockVisionAnalyzer()
     return analyzer

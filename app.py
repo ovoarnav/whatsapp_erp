@@ -170,8 +170,6 @@ def use_demo():
     token = uuid.uuid4().hex[:12]
     demo_zip = Path("demo_data/demo_whatsapp_export.zip")
     try:
-        if not demo_zip.exists():
-            subprocess.run([sys.executable, "demo_data/generate_demo_zip.py"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         jobs = run_pipeline(demo_zip, DEFAULT_TZ, OLLAMA_MODEL, token)
         return render(jobs, DEFAULT_TZ, OLLAMA_MODEL, token)
     except Exception as exc:

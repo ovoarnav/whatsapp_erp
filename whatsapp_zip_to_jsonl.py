@@ -151,9 +151,7 @@ def process_zip(zip_path: Path, out_path: Path, tz_name: Optional[str] = "Americ
     from media_processing import media_type_for
     count = 0
     media_rows=[]
-    chat_ids=[]
     with zipfile.ZipFile(zip_path, "r") as zf, out_path.open("w", encoding="utf-8") as out_f:
-        chat_ids=[Path(i.filename).stem for i in zf.infolist() if i.filename.lower().endswith(".txt")]
         for info in zf.infolist():
             low=info.filename.lower()
             if not low.endswith(".txt"):
