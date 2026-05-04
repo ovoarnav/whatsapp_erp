@@ -209,12 +209,36 @@ def maybe_refine_with_ollama(job: Dict[str,Any], model: str, chat_text: str) -> 
         "media_summary": job.get("media_summary"),
         "visual_observations": job.get("visual_observations", [])[:4],
     }
+
+
+def _ollama_json_call(model: str, prompt: str) -> Dict[str, Any]:
+    request_payload = {
+        "model": model,
+        "stream": False,
+        "messages": [{"role": "user", "content": prompt}],
+        "options": {
+            "temperature": 0,
+            "num_predict": 220,
+            "top_k": 20,
+            "top_p": 0.9,
+            "repeat_penalty": 1.05,
+        },
+    }
+    request = urllib.request.Request(
+        OLLAMA_CHAT_URL,
+        data=json.dumps(request_payload).encode("utf-8"),
+        headers={"Content-Type":"application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=90) as response:
+        response_obj = json.loads(response.read().decode("utf-8"))
+    return json.loads(response_obj.get("message",{}).get("content","{}"))
+
+
+def maybe_refine_with_ollama(job: Dict[str,Any], model: str, chat_text: str) -> Dict[str,Any]:
+    compact = _build_compact_ollama_payload(job)
     prompt=f"Return only valid JSON for same schema keys. Keep concise fields and practical actions. Input JSON: {json.dumps(compact)}\\nChat:\\n{chat_text[:MAX_CHAT_CONTEXT_CHARS]}"
     try:
-        req=urllib.request.Request("http://localhost:11434/api/chat",data=json.dumps({"model":model,"stream":False,"messages":[{"role":"user","content":prompt}],"options":{"temperature":0,"num_predict":220,"top_k":20,"top_p":0.9,"repeat_penalty":1.05}}).encode("utf-8"),headers={"Content-Type":"application/json"})
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            obj=json.loads(resp.read().decode("utf-8"))
-        parsed=json.loads(obj.get("message",{}).get("content","{}"))
+        parsed = _ollama_json_call(model, prompt)
         out = normalize_job(parsed, job)
         out["confidence"] = max(float(out.get("confidence") or 0.0), 0.86)
         return out
